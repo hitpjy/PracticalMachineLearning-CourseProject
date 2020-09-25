@@ -1,0 +1,133 @@
+---
+title: "CourseProjectMachineLearning"
+author: "Jaeyuel Park"
+output:
+  html_document:
+    df_print: paged
+---
+## Objectives
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+## Overview
+
+# About data
+ There are two datasets used for this analysis. Training set and test set. However, test set is not used in this file, for we need access to Coursera Project quiz. So we validate by creating another test using training set.
+ Initially, there are 160 variables for both test and training sets. All of which are to explain HAR, human activity reaction. There are total 19622 observations in the training set and 20 for the test set. For further information about the data you could visit [here](http://groupware.les.inf.puc-rio.br/har) 
+ 
+# About model 
+ The model we choose is random forest model. Although it is not included in this file, there were trials with gbm and decision tree as well. However, those two were not able to explain as well as random forest model. Resampling method is k fold, where k=5. Pre processing methods were not used. 
+
+## Loading and Exploratory Analysis on data
+# Loading libraries 
+```{r setting, echo = TRUE}
+library(ggplot2)
+library(doParallel)
+library(caret)
+library(randomForest)
+library(corrplot)
+set.seed(1234)
+```
+# Links for the data
+Download the files to the working directory for the analysis
+[Training set](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+[Test set](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+[Information about the data](http://groupware.les.inf.puc-rio.br/har)
+
+# Loading the Data
+```{r loading, echo = TRUE}
+pmltraining <- read.csv("pml-training.csv",na.strings = c("#DIV/0!", "NA"))
+pmltesting  <- read.csv("pml-testing.csv",na.strings = c("#DIV/0!", "NA"))
+```
+
+## Exploratory Analysis & Cleaning data
+
+```{r skimming, echo = TRUE}
+summary(pmltraining)
+```
+
+# Cleaning Data
+We could check that there are indexing columns that could be removed(1). Also there are plenty of variables that are NAs(2). At last, there are some variables that seems likely to be NZV(3).
+
+```{r cleaning data, echo = TRUE}
+##(1)cleaning indexing columns
+pmltraining <- pmltraining[,-c(1:5)]
+pmltesting <- pmltesting[,-c(1:5)]
+##(2)Getting rid of NAs(Not imputing, but eliminating those that have too many NAs)
+NAs    <- sapply(pmltraining, function(x) mean(is.na(x))) > 0.95
+pmltraining <- pmltraining[,NAs==FALSE]
+pmltesting <- pmltesting[,NAs==FALSE]
+##(3)NZV
+NZV <- nearZeroVar(pmltraining)
+pmltraining <- pmltraining[,-NZV]
+pmltesting <- pmltesting[,-NZV]
+dim(pmltraining)
+dim(pmltesting)
+
+```
+
+Now we have 54 variables with 196222 obs.
+
+# Exploratory Anlalysis
+
+```{r correlation, echo = TRUE, fig.height=10 , fig.width=10}
+#Correlations except for classe variable
+corMatrix <- cor(pmltraining[,-54])
+corrplot(corMatrix, type = "upper", method = "circle", order = "FPC", tl.cex=.8 )
+#"FPC" for the first principal component order
+
+```
+
+ 
+## Data Analysis & Building Model
+# Creating training set
+ First we part training set, so we could validate within the given training set, and use the test set for the final testing purpose.
+ 
+```{r part training set, echo = TRUE} 
+intrain <- createDataPartition(pmltraining$classe, p=.7 , list = FALSE
+                               )
+training <- pmltraining[intrain,]
+testing <-  pmltraining[-intrain,]
+```
+
+# Resampling method with parallel configuration
+
+ This part is for increasing the speed of the random forest. We here, set the method of resampling as k fold validation, where k = 5(10-fold and bootstrap takes too much time, although theres not so much of a difference in accuracy). With doparallel packages, it saves us lots of time with random forest model later.   
+```{r parallel config&cross validation, echo = TRUE}
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+train.control <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+```
+
+# Training model
+ We are going to train the model with the random forest.
+```{r randomforest, echo = TRUE}
+rf<-train(classe ~., data = training, method = "rf", trControl = train.control)
+stopCluster(cluster)
+registerDoSEQ()
+rf
+```
+
+# Analyizing model
+
+ The above result suggest that the model has 53 predictors, with predicted value of 5 factors. The final model selected is with 27 predictors with accuracy of 0.99716, meaning that in sample error is 0.0029. Actually the accuracy is really high, so we need to keep in mind that there might be a chance of overfitting.
+
+# Validation with testing set
+
+```{r validation, echo = TRUE}
+pre <- predict(rf, testing)
+str(pre)
+str(testing$classe)
+confusionMatrix(pre, as.factor(testing$classe))
+```
+
+ Accuracy is .9975, which, actually is higher than with the training set. So we can argue that it is well tuned. And out of sample error would be, .0025.
+ 
+
+
+
+
+
+
+
+
